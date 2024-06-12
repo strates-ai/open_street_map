@@ -15,7 +15,6 @@ defmodule OpenStreetMap.Client do
 
   """
   @spec call(String.t(), list) :: {}
-
   def call(type, args) when type in ["search", "reverse"] and is_list(args) do
     type
     |> generate_url(args)
@@ -36,16 +35,23 @@ defmodule OpenStreetMap.Client do
 
   # make request
   defp fetch(url, args) do
-    case HTTPoison.get(base_url(args) <> url, headers(args), request_options(args)) do
-      {:ok, %HTTPoison.Response{status_code: 200, body: body}} -> {:ok, body}
-      {:ok, %HTTPoison.Response{body: body}} -> {:error, body}
-      {:error, %HTTPoison.Error{reason: reason}} -> {:error, reason}
+    options = request_options(args) |> Keyword.put(:headers, headers(args))
+
+    case Req.get(base_url(args) <> url, options) do
+      {:ok, %Req.Response{status: 200, body: body}} -> {:ok, body}
+      {:ok, %Req.Response{body: body}} -> {:error, body}
+      {:error, %{reason: reason}} -> {:error, reason}
+      {:error, _} -> {:error, "Unknown error"}
     end
   end
 
   # parse result
   defp parse({result, :timeout}, format) when format in ["json", "jsonv2"], do: {result, :timeout}
-  defp parse({result, response}, format) when format in ["json", "jsonv2"], do: {result, Jason.decode!(response)}
+
+  defp parse({result, response}, format)
+       when format in ["json", "jsonv2"] and is_binary(response),
+       do: {result, Jason.decode!(response)}
+
   defp parse(response, _), do: response
 
   # ADDITIONAL FUNCTIONS
@@ -53,9 +59,36 @@ defmodule OpenStreetMap.Client do
   # list with available options based on request type
   defp valid_args(type) do
     case type do
-      "search" -> [:q, :format, :addressdetails, :extratags, :namedetails, :viewbox, :bounded, :exclude_place_ids, :limit, :accept_language, :email]
-      "reverse" -> [:format, :lat, :lon, :zoom, :addressdetails, :extratags, :namedetails, :accept_language, :email]
-      _ -> []
+      "search" ->
+        [
+          :q,
+          :format,
+          :addressdetails,
+          :extratags,
+          :namedetails,
+          :viewbox,
+          :bounded,
+          :exclude_place_ids,
+          :limit,
+          :accept_language,
+          :email
+        ]
+
+      "reverse" ->
+        [
+          :format,
+          :lat,
+          :lon,
+          :zoom,
+          :addressdetails,
+          :extratags,
+          :namedetails,
+          :accept_language,
+          :email
+        ]
+
+      _ ->
+        []
     end
   end
 
@@ -69,7 +102,12 @@ defmodule OpenStreetMap.Client do
   # define params for request
   defp base_url(args), do: args[:hostname] || "https://nominatim.openstreetmap.org/"
 
-  defp headers(args), do: [{"Content-Type", "application/json"}, {"User-Agent", user_agent(args[:user_agent])}, {"Accept", "Application/json; Charset=utf-8"}]
+  defp headers(args),
+    do: [
+      {"Content-Type", "application/json"},
+      {"User-Agent", user_agent(args[:user_agent])},
+      {"Accept", "Application/json; Charset=utf-8"}
+    ]
 
   defp request_options(args), do: args[:request_options] || []
 
